@@ -1,11 +1,23 @@
+import 'package:flutter_osm_plugin/flutter_osm_plugin.dart';
+import 'navigation.dart';
+
+enum PosState { waiting, saved }
+
 class Position {
   Position(double lat, double long) {
-    position = (lat, long);
+    position = GeoPoint(latitude: lat, longitude: long);
   }
 
-  (double, double) position = (0, 0);
+  GeoPoint position = GeoPoint(latitude: 0, longitude: 0);
+  PosState state = PosState.waiting;
+  Navigation nav = Navigation();
 
-  void setPosition(double lat, double long) {
-    position = (lat, long);
+  void checkRouting(Future<GeoPoint> geo) {
+    switch (state) {
+      case PosState.waiting:
+        position = geo as GeoPoint;
+      case PosState.saved:
+        nav.Navigate(position);
+    }
   }
 }

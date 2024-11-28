@@ -2,41 +2,29 @@ import 'package:flutter/material.dart';
 import 'position.dart';
 import 'package:flutter_osm_plugin/flutter_osm_plugin.dart';
 
+// ignore: must_be_immutable
 class Home extends StatelessWidget {
   Home({super.key});
 
   Position pos = Position(0.0, 0.0);
+  final _controller = MapController.withUserPosition(
+      trackUserLocation: const UserTrackingOption(
+    enableTracking: true,
+    unFollowUser: false,
+  ));
+
+  void wait(controller) async {
+    await controller.startLocationUpdating();
+  }
 
   @override
   Widget build(BuildContext context) {
+    wait(_controller);
+
     return Scaffold(
-      appBar: AppBar(
-        leading: const IconButton(
-          icon: Icon(Icons.menu),
-          tooltip: 'Nav',
-          onPressed: null,
-        ),
-        title: const Text('FYC'),
-        actions: const [
-          IconButton(
-            onPressed: null,
-            icon: Icon(Icons.search),
-            tooltip: 'Search',
-          ),
-        ],
-      ),
       body: Center(
           child: OSMFlutter(
-              controller: MapController(
-                initPosition:
-                    GeoPoint(latitude: 47.4358055, longitude: 8.4737324),
-                areaLimit: const BoundingBox(
-                  east: 10.4922941,
-                  north: 47.8084648,
-                  south: 45.817995,
-                  west: 5.9559113,
-                ),
-              ),
+              controller: _controller,
               osmOption: OSMOption(
                 userTrackingOption: const UserTrackingOption(
                   enableTracking: true,
@@ -69,7 +57,7 @@ class Home extends StatelessWidget {
               ))),
       floatingActionButton: FloatingActionButton(
         tooltip: 'Save/Search',
-        onPressed: () => pos.setPosition(100.0, 100.0),
+        onPressed: () => pos.checkRouting(_controller.myLocation()),
         child: const Icon(Icons.assistant_navigation),
       ),
     );

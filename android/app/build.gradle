@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.example.smart_park"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "25.1.8937393"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
@@ -19,6 +19,13 @@ android {
         jvmTarget = JavaVersion.VERSION_1_8
     }
 
+    dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.2'
+    }
+    
+    compileOptions {
+        coreLibraryDesugaringEnabled true
+    }
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.smart_park"

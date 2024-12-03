@@ -12,12 +12,26 @@ class Position {
   PosState state = PosState.waiting;
   Navigation nav = Navigation();
 
-  void checkRouting(Future<GeoPoint> geo) {
-    switch (state) {
-      case PosState.waiting:
-        position = geo as GeoPoint;
-      case PosState.saved:
-        nav.Navigate(position);
+  bool isNavigating() {
+    return state == PosState.saved;
+  }
+
+  Future<void> checkRouting(Future<GeoPoint> geo) async {
+    try {
+      GeoPoint resolvedGeo = await geo;
+      switch (state) {
+        case PosState.waiting:
+          position = resolvedGeo;
+          state = PosState.saved;
+          print('Saved position: ${position.latitude}, ${position.longitude}');
+          break;
+        case PosState.saved:
+          nav.Navigate(position);
+          print('Navigating to position: ${position.latitude}, ${position.longitude}');
+          break;
+      }
+    } catch (e) {
+      print('Error resolving GeoPoint: $e');
     }
   }
 }

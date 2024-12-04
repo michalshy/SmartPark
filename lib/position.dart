@@ -5,11 +5,12 @@ enum PosState { waiting, saved }
 
 class Position {
   Position(double lat, double long) {
-    position = GeoPoint(latitude: lat, longitude: long);
+    // position = GeoPoint(latitude: lat, longitude: long);
+    position = GeoPoint(latitude: 37.421998333333335, longitude: -121.084);
   }
 
   GeoPoint position = GeoPoint(latitude: 0, longitude: 0);
-  PosState state = PosState.waiting;
+  PosState state = PosState.saved;
   Navigation nav = Navigation();
 
   bool isNavigating() {

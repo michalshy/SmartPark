@@ -38,15 +38,14 @@ class _HomeState extends State<Home> {
   void _setupLocationListener() {
     _controller.listenerMapLongTapping.addListener(() {
       // Reapply markers when map updates
-      _applyUserLocationMarker();
+      _applyUserLocationMarker(GeoPoint(latitude: 0.0, longitude: 0.0));
     });
   }
 
-  Future<void> _applyUserLocationMarker() async {
+  Future<void> _applyUserLocationMarker(GeoPoint p) async {
     try {
-      // Add the user location marker
       await _controller.addMarker(
-        pos.position, // Use the GeoPoint from the `Position` class
+        p, 
         markerIcon: const MarkerIcon(
           icon: Icon(
             Icons.location_history_rounded,
@@ -55,24 +54,16 @@ class _HomeState extends State<Home> {
           ),
         ),
       );
-
-      // If navigating, add the direction arrow marker
-      if (_isNavigating) {
-        await _addDirectionArrow();
-      }
     } catch (e) {
       print('Error applying user location marker: $e');
     }
   }
 
-  Future<void> _addDirectionArrow() async {
+  Future<void> _addDirectionArrow(GeoPoint p) async {
     try {
-      // Use the GeoPoint stored in `pos.position`
-      GeoPoint currentPosition = pos.position;
 
-      // Add the direction arrow marker
       await _controller.addMarker(
-        currentPosition,
+        p,
         markerIcon: const MarkerIcon(
           icon: Icon(
             Icons.double_arrow,
@@ -83,6 +74,24 @@ class _HomeState extends State<Home> {
       );
     } catch (e) {
       print('Error adding direction arrow marker: $e');
+    }
+  }
+
+    Future<void> navigateTo(GeoPoint start ,GeoPoint end) async {
+    try {
+
+      await _controller.drawRoad(
+        start,
+        end,
+        roadOption: const RoadOption(
+          roadColor: Color.fromARGB(255, 238, 5, 165),
+          roadWidth: 14.0,
+        ),
+      );
+
+      print("Navigation started from $start to $end");
+    } catch (e) {
+      print("Error during navigation: $e");
     }
   }
 
@@ -120,7 +129,7 @@ class _HomeState extends State<Home> {
               ),
             ),
             roadConfiguration: const RoadOption(
-              roadColor: Colors.yellowAccent,
+              roadColor: Color.fromARGB(255, 238, 5, 165),
             ),
           ),
         ),
@@ -129,16 +138,20 @@ class _HomeState extends State<Home> {
         tooltip: 'Save/Search',
         onPressed: () async {
           try {
-            // Get current location and update pos.position
             GeoPoint location = await _controller.myLocation();
             await pos.checkRouting(Future.value(location));
-
+            print('Current position: ${location.latitude}, ${location.longitude}');
+            print('Pos position: ${pos.position}');
             setState(() {
               _isNavigating = pos.isNavigating();
             });
-
-            // Apply markers with updated navigation state
-            await _applyUserLocationMarker();
+            await _controller.removeMarker(pos.position);
+            await _applyUserLocationMarker(location);
+            if(_isNavigating)
+             {
+              await _addDirectionArrow(pos.position);
+              await navigateTo(location, pos.position);
+              }
           } catch (e) {
             print('Error handling location: $e');
           }

@@ -6,7 +6,7 @@ enum PosState { waiting, saved }
 class Position {
   Position(double lat, double long) {
     // position = GeoPoint(latitude: lat, longitude: long);
-    position = GeoPoint(latitude: 37.421998333333335, longitude: -121.084);
+    position = GeoPoint(latitude: 37.39029547617543, longitude: -121.98726585577506); //  50.290903326092085 18.675671023511427
   }
 
   GeoPoint position = GeoPoint(latitude: 0, longitude: 0);

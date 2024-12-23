@@ -1,4 +1,7 @@
 import 'dart:async'; // For Timer
+import 'dart:developer';
+import 'package:cloud_firestore/cloud_firestore.dart' as fs;
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'position.dart';
 import 'package:flutter_osm_plugin/flutter_osm_plugin.dart';
@@ -16,10 +19,10 @@ class Parking {
   int? maxSlots;
   int? availableSlots;
 
-  Parking(GeoPoint pos, int max) {
+  Parking(GeoPoint pos, int availability) {
     position = pos;
-    maxSlots = max;
-    availableSlots = max;
+    maxSlots = availability; // Ustawiamy maksymalną liczbę miejsc na podstawie danych
+    availableSlots = availability; // Początkowo dostępne miejsca są równe maksymalnym
   }
 
   void updateAvailableSlots(int slots) {
@@ -35,12 +38,18 @@ class Parking {
   }
 }
 
+
 class _HomeState extends State<Home> {
-  Position pos = Position(0.0, 0.0);
+  Position pos = Position(0, 0);
+  bool _dirArrow = true;
   bool _isNavigating = false;
   GeoPoint? currPos;
   List<Parking> parkings = [];
   late Timer _updateTimer;
+  var db;
+  var docRef;
+  List<GeoPoint> _currentMarkers = [];
+
 
   final _controller = MapController.withUserPosition(
     trackUserLocation: const UserTrackingOption(
@@ -49,14 +58,18 @@ class _HomeState extends State<Home> {
     ),
   );
 
-  @override
-  void initState() {
-    super.initState();
-    _initializeController();
-    _setupLocationListener();
-    _initParkings();
-    _startUpdateTimer();
-  }
+@override
+void initState() {
+  super.initState();
+  _initialize();
+}
+
+Future<void> _initialize() async {
+  await _initializeController();
+  _setupLocationListener();
+  await _initParkings();
+  _startUpdateTimer();
+}
 
   Future<void> _initializeController() async {
     try {
@@ -66,19 +79,77 @@ class _HomeState extends State<Home> {
     }
   }
 
+  Parking? _getTappedParking(GeoPoint tappedPoint, {double threshold = 0.0005}) {
+  for (Parking parking in parkings) {
+    if (_isPointNear(tappedPoint, parking.getPosition(), threshold: threshold)) {
+      return parking;
+    }
+  }
+  return null;
+}
+
+  bool _isPointNear(GeoPoint point, GeoPoint marker, {double threshold = 0.0005}) {
+    return (point.latitude - marker.latitude).abs() < threshold &&
+          (point.longitude - marker.longitude).abs() < threshold;
+  }
+
   void _setupLocationListener() {
     _controller.listenerMapLongTapping.addListener(() {
       // Reapply markers when map updates
-      _applyUserLocationMarker(GeoPoint(latitude: 0.0, longitude: 0.0));
+      _applyUserLocationMarker(GeoPoint(latitude: 0, longitude: 0));
     });
-  }
 
-  void _initParkings() // TODO: GET LIST OF PARKINGS FROM DATABASE
-  {
-    Parking p = Parking(GeoPoint(latitude: 37.021998333333335, longitude: -121.084), 2);
-    parkings.add(p);
-    _updateParkings();
-  }
+    _controller.listenerMapSingleTapping.addListener(() async {
+    GeoPoint? tappedPoint = _controller.listenerMapSingleTapping.value;
+
+    if (tappedPoint != null) {
+      print('pawel');
+      Parking? tappedParking = _getTappedParking(tappedPoint);
+      if (tappedParking != null) {
+        print('olek');
+        _showParkingPopup(tappedParking);
+      }
+    }
+  });
+}
+
+
+Future<void> _initParkings() async {
+  db = fs.FirebaseFirestore.instance;
+
+  docRef = db.collection("parkings").doc("myparkings");
+
+  // Nasłuchiwanie zmian w dokumencie
+  docRef.snapshots().listen((docSnapshot) {
+    if (docSnapshot.exists) {
+      // Pobieramy dane jako mapę
+      var data = docSnapshot.data() as Map<String, dynamic>;
+
+      // Zakładamy, że "parkings" to lista map
+      List<dynamic> parkingData = data['parkings'] ?? [];
+      parkings.clear(); // Czyścimy istniejącą listę parkingów
+      for (var parking in parkingData) {
+        if (parking is Map<String, dynamic>) {
+          // Pobieramy lokalizację i dostępność
+          var location = parking['location'] as fs.GeoPoint;
+          int availability = parking['availability'] ?? 0;
+
+          // Dodajemy parking na podstawie danych
+          parkings.add(Parking(
+            GeoPoint(latitude: location.latitude, longitude: location.longitude),
+            availability, // Ustawiamy liczbę maksymalnych miejsc parkingowych
+          ));
+        }
+      }
+      // Aktualizujemy widok parkingów na mapie
+      _updateParkings();
+    }
+  }, onError: (e) {
+    print("Error listening to document changes: $e");
+  });
+}
+
+
 
   void _startUpdateTimer() {
     _updateTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
@@ -86,34 +157,34 @@ class _HomeState extends State<Home> {
     });
   }
 
-  Future<void> _updateParkings() async {
-    try {
-      for (Parking parking in parkings) {
-        int newAvailableSlots = 2; // TODO: Fetch from database
-        parking.updateAvailableSlots(newAvailableSlots);
-
-        // Add marker for the parking with a tap event to show popup
-        await _controller.addMarker(
-          parking.getPosition(),
-          markerIcon: MarkerIcon(
-            iconWidget: GestureDetector(
-              onTapUp: (_) {
-                print("Parking tapped!"); // For debugging
-                _showParkingPopup(parking);
-              },
-              child: Icon(
-                Icons.local_parking,
-                color: Colors.green,
-                size: 48,
-              ),
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      print('Error updating parkings: $e');
+Future<void> _updateParkings() async {
+  try {
+    // Usuwamy istniejące markery
+    for (GeoPoint marker in _currentMarkers) {
+      await _controller.removeMarker(marker);
     }
+    _currentMarkers.clear();
+
+    // Dodajemy nowe markery
+    for (Parking parking in parkings) {
+      await _controller.addMarker(
+        parking.getPosition(),
+        markerIcon: MarkerIcon(
+          icon: Icon(
+            Icons.local_parking,
+            color: parking.getAvailableSlots() > 0 ? Colors.green : Colors.red,
+            size: 48,
+          ),
+        ),
+      );
+      // Dodajemy marker do listy
+      _currentMarkers.add(parking.getPosition());
+    }
+  } catch (e) {
+    print('Error updating parkings: $e');
   }
+}
+
 
   void _showParkingPopup(Parking parking) {
     showDialog(
@@ -170,21 +241,25 @@ class _HomeState extends State<Home> {
   }
 
   Future<void> navigateTo(GeoPoint start, GeoPoint end) async {
-    try {
-      await _controller.drawRoad(
-        start,
-        end,
-        roadOption: const RoadOption(
-          roadColor: Color.fromARGB(255, 238, 5, 165),
-          roadWidth: 14.0,
-        ),
-      );
+  try {
+    // Czyścimy poprzednie drogi
+    await _controller.clearAllRoads();
 
-      print("Navigation started from $start to $end");
-    } catch (e) {
-      print("Error during navigation: $e");
-    }
+    // Rysujemy trasę na mapie
+    await _controller.drawRoad(
+      start,
+      end,
+      roadOption: const RoadOption(
+        roadColor: Color.fromARGB(255, 238, 5, 165),
+        roadWidth: 8.0,
+      ),
+    );
+
+    print("Navigation started from $start to $end");
+  } catch (e) {
+    print("Error drawing road: $e");
   }
+}
 
   @override
   void dispose() {
@@ -192,6 +267,27 @@ class _HomeState extends State<Home> {
     super.dispose();
   }
 
+  Parking findClosestParking()
+  {
+    double minX = 1000;
+    double minY = 1000;
+    double tempX, tempY;
+    double lat = 0, long = 0;
+    Parking closestParking = Parking(GeoPoint(latitude: lat,longitude: long), 2);
+    for (Parking parking in parkings) {
+      tempX = (pos.position.latitude - parking.position!.latitude).abs();
+      tempY = (pos.position.longitude - parking.position!.longitude).abs();
+      if(tempX < minX && tempY < minY && parking.availableSlots! > 0)
+      {
+        minX = tempX;
+        minY = tempY;
+        closestParking = parking;
+      }
+    }
+
+    return closestParking;
+  }
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -235,33 +331,68 @@ class _HomeState extends State<Home> {
         mainAxisSize: MainAxisSize.min,
         children: [
           FloatingActionButton(
-            tooltip: 'Save/Search',
+        tooltip: 'Save/Search',
+        onPressed: () async {
+        try {
+          GeoPoint location = await _controller.myLocation();
+          await pos.checkRouting(Future.value(location));
+          currPos = location;
+          print('Current position: ${location.latitude}, ${location.longitude}');
+          print('Pos position: ${pos.position}');
+          setState(() {
+            _isNavigating = pos.isNavigating();
+          });
+
+          // Usuń poprzedni marker przed dodaniem nowego
+          await _applyUserLocationMarker(location);
+
+          if (_dirArrow) {
+            await _addDirectionArrow(pos.position);
+            _dirArrow = false;
+          }
+        } catch (e) {
+          print('Error handling location: $e');
+        }
+      },
+      child: const Icon(Icons.assistant_navigation),
+    ),
+          const SizedBox(height: 16),
+          FloatingActionButton(
+            tooltip: 'Navigate to Free Parking Slot',
             onPressed: () async {
-              try {
-                GeoPoint location = await _controller.myLocation();
-                await pos.checkRouting(Future.value(location));
-                currPos = location;
-                print('Current position: ${location.latitude}, ${location.longitude}');
-                print('Pos position: ${pos.position}');
-                setState(() {
-                  _isNavigating = pos.isNavigating();
-                });
-                await _controller.removeMarker(pos.position);
-                await _applyUserLocationMarker(location);
-                if (_isNavigating) {
-                  await _addDirectionArrow(pos.position);
-                }
-              } catch (e) {
-                print('Error handling location: $e');
+              Parking closestParking = findClosestParking();
+              if (_isNavigating) {
+                await navigateTo(pos.position, closestParking.position!);
+                _showParkingPopup(closestParking);
+              } else {
+                showDialog(
+                  context: context,
+                  builder: (BuildContext context) {
+                    return AlertDialog(
+                      title: const Text("Error occurred"),
+                      content: const Text("You need to save a location before navigating."),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(context).pop(); // Close the dialog
+                          },
+                          child: const Text("OK"),
+                        ),
+                      ],
+                    );
+                  },
+                );
               }
             },
-            child: const Icon(Icons.assistant_navigation),
+            child: const Icon(Icons.local_parking_sharp),
           ),
           const SizedBox(height: 16),
           FloatingActionButton(
             tooltip: 'Navigate to Destination',
             onPressed: () async {
-              if (_isNavigating) await navigateTo(currPos!, pos.position);
+              if (_isNavigating) { 
+                await navigateTo(currPos!, pos.position);
+              }
               else {
                 showDialog(
                   context: context,
@@ -284,8 +415,17 @@ class _HomeState extends State<Home> {
             },
             child: const Icon(Icons.directions),
           ),
+          const SizedBox(height: 16),
         ],
       ),
     );
+  }
+
+  Future<fs.DocumentSnapshot> getData() async {
+    await Firebase.initializeApp();
+    return await fs.FirebaseFirestore.instance
+        .collection("parkings")
+        .doc("myparkings")
+        .get();
   }
 }
